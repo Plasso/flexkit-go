@@ -44,6 +44,66 @@ import (
 
 const domain string = "https://plasso.com"
 
+const getMemberQuery string = `
+query getMember($publicKey: String, $token: String) {
+  member(publicKey: $publicKey, token: $token) {
+    name,
+    email,
+    planId,
+    ccType,
+    ccLast4,
+    shippingInfo {
+      name
+      address
+      city
+      state
+      zip
+      country
+    },
+    dataFields {
+      id,
+      value
+    },
+    space {
+      user {
+        publicKey
+      }
+    }
+  }
+}`
+
+type gqlQuery struct {
+	Query     string            `json:"query"`
+	Variables map[string]string `json:"variables"`
+}
+
+type memberDataResponse struct {
+	Data struct {
+		Member struct {
+			Id           string `json:"id"`
+			Name         string `json:"name"`
+			Email        string `json:"email"`
+			PlanId       int32  `json:"planId"`
+			CcType       string `json:"ccType"`
+			CcLast4      string `json:"ccLast4"`
+			ShippingInfo struct {
+				Name    string `json:"name"`
+				Address string `json:"address"`
+				City    string `json:"city"`
+				State   string `json:"state"`
+				Zip     string `json:"zip"`
+				Country string `json:"country"`
+			} `json:"shippingInfo"`
+			DataFields []DataItem `json:"dataFields"`
+			Space      struct {
+				User struct {
+					PublicKey string `json:"publicKey"`
+				} `json:"user"`
+			} `json:"space"`
+		} `json:"member"`
+	} `json:"data"`
+}
+
 // The structure that should be filled out and passed to the Login function.
 type LoginRequest struct {
 	PublicKey string `json:"public_key"` // Public Key of Plasso user
@@ -119,7 +179,7 @@ type tokenResponse struct {
 type CreditCardRequest struct {
 	Last4       string `json:"cc_last_4"` // Informational, Last 4 of credit card
 	Type        string `json:"cc_type"`   // Informational, type of card
-	PlanId      int    `json:"plan"`      // Allows changing plan
+	PlanId      string `json:"plan"`      // Allows changing plan
 	Token       string `json:"token"`     // Stripe source token
 	memberToken string `json:"pltoken"`
 }
@@ -149,11 +209,8 @@ type MemberData struct {
 	Id              string     // A unique id identifying the user, does not change
 	Email           string     // Email customer provided
 	Name            string     // Name of customer
-	BillingAddress  string     // Billing address of customer (optional depending on plan).
-	BillingCity     string     // Billing city of customer (optional depending on plan).
-	BillingState    string     // Billing state of customer (optional depending on plan).
-	BillingZip      string     // Billing zip of customer (optional depending on plan).
-	BillingCountry  string     // Billing country of customer (optional depending on plan).
+	CreditCardLast4 string     // Informational, Last 4 of credit card
+	CreditCardType  string     // Informational, type of card
 	ShippingName    string     // Shipping name of customer (optional depending on plan).
 	ShippingAddress string     // Shipping address of customer (optional depending on plan).
 	ShippingCity    string     // Shipping city of customer (optional depending on plan).
@@ -163,6 +220,39 @@ type MemberData struct {
 	ShippingOptions string     // Shipping options of customer (optional depending on plan).
 	DataFields      []DataItem // Data items (optional)
 	Plans           []string   // Array of plan ids
+}
+
+func graphQL(query string, variables map[string]string, response interface{}) error {
+	var client = &http.Client{
+		Timeout: 1 * time.Second,
+	}
+
+	var gql = gqlQuery{query, variables}
+
+	body, err := json.Marshal(gql)
+	if err != nil {
+		return err
+	}
+
+	var url = fmt.Sprintf("%s/graphql", domain)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	responseBody, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(responseBody, response)
 }
 
 func sendRequest(kind string, path string, request interface{}) ([]byte, error) {
@@ -224,6 +314,30 @@ func Login(request LoginRequest) (*Member, error) {
 
 // Get member details
 func (member *Member) GetData() (*MemberData, error) {
+	var response memberDataResponse
+	var variables map[string]string
+	var memberData MemberData
+
+	var err = graphQL(getMemberQuery, variables, &response)
+	if err != nil {
+		return nil, err
+	}
+
+	memberData.CreditCardLast4 = response.Data.Member.CcLast4
+	memberData.CreditCardType = response.Data.Member.CcType
+	// memberData.DataFields
+	memberData.Email = response.Data.Member.Email
+	memberData.Id = response.Data.Member.Id
+	memberData.Name = response.Data.Member.Name
+	// memberData.Plans
+	memberData.ShippingAddress = response.Data.Member.ShippingInfo.Address
+	memberData.ShippingCity = response.Data.Member.ShippingInfo.City
+	memberData.ShippingCountry = response.Data.Member.ShippingInfo.Country
+	memberData.ShippingName = response.Data.Member.ShippingInfo.Name
+	//memberData.ShippingOptions = response.Data.Member.???
+	memberData.ShippingState = response.Data.Member.ShippingInfo.State
+	memberData.ShippingZip = response.Data.Member.ShippingInfo.Zip
+
 	return nil, nil
 }
 
