@@ -51,6 +51,7 @@ type LoginRequest struct {
 	Password  string `json:"password"`   // Password of customer
 }
 
+// This structure represents a product.
 type Product struct {
 	Id     string `json:"id"`     // Plasso product id
 	Qty    string `json:"qty"`    // Quantity
