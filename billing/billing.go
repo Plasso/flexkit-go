@@ -1,4 +1,15 @@
-package plasso
+/*
+Blah blah.
+
+Handler
+
+Blah blah.
+
+Manual Authentication
+
+Blah blah.
+*/
+package billing
 
 import (
   "net/http"
@@ -28,6 +39,7 @@ type plasso struct {
 
 type gqlQuery struct {
   Query string `json:"query"`
+  Variables map[string]string `json:"variables"`
 }
 
 type gqlResponse struct {
@@ -50,9 +62,8 @@ func New(token string) (*plasso, error) {
     Timeout: 1 * time.Second,
   }
 
-  var template = "{member(token:\"{{.token}}\"){id,planId,space{logoutUrl}}}"
-  var query = strings.Replace(template, "{{.token}}", token, 1)
-  var gql = gqlQuery{query}
+  var template = "{member(token: $token){id,planId,space{logoutUrl}}}"
+  var gql = gqlQuery{query, {"token": token}}
 
   body, err := json.Marshal(gql)
   if err != nil {
@@ -86,22 +97,12 @@ func New(token string) (*plasso, error) {
   return &plasso{true, token, m.Id, m.PlanId, space{ m.Space.LogoutUrl }}, nil
 }
 
-func FromRequest(r *http.Request) (*plasso, error) {
+func fromRequest(r *http.Request) (*plasso, error) {
   // If cookie exists
     // Parse it into plasso object
   // If cookie does not exists
     // Look for token get param
     // if logout return nil
-}
-
-func ToResponse(w http.ResponseWriter) {
-  // Set cookie
-}
-
-func logout(w http.ResponseWriter) {
-}
-
-func redirect(w http.ResponseWriter) {
 }
 
 func (p *plasso) Protect(handler handler) handler {
@@ -116,5 +117,25 @@ func (p *plasso) Protect(handler handler) handler {
     }
     
   }
+}
+
+func GetData(token string) error {
+
+}
+
+func UpdateSettings(token string) error {
+
+}
+
+func UpdateCreditCard(token string) error {
+
+}
+
+func Delete(token string) error {
+
+}
+
+func Logout(token string) error {
+
 }
 
