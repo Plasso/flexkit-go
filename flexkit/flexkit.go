@@ -45,11 +45,11 @@ import (
 const domain string = "https://plasso.com"
 
 const getMemberQuery string = `
-query getMember($publicKey: String, $token: String) {
-  member(publicKey: $publicKey, token: $token) {
+query getMember($token: String) {
+  member(token: $token) {
+  	id,
     name,
     email,
-    planId,
     ccType,
     ccLast4,
     shippingInfo {
@@ -64,10 +64,8 @@ query getMember($publicKey: String, $token: String) {
       id,
       value
     },
-    space {
-      user {
-        publicKey
-      }
+    plan {
+    	alias
     }
   }
 }`
@@ -80,12 +78,14 @@ type gqlQuery struct {
 type memberDataResponse struct {
 	Data struct {
 		Member struct {
-			Id           string `json:"id"`
-			Name         string `json:"name"`
-			Email        string `json:"email"`
-			PlanId       int32  `json:"planId"`
-			CcType       string `json:"ccType"`
-			CcLast4      string `json:"ccLast4"`
+			Id      string `json:"id"`
+			Name    string `json:"name"`
+			Email   string `json:"email"`
+			CcType  string `json:"ccType"`
+			CcLast4 string `json:"ccLast4"`
+			Plan    struct {
+				Alias string `json:"alias"`
+			} `json:"plan"`
 			ShippingInfo struct {
 				Name    string `json:"name"`
 				Address string `json:"address"`
@@ -95,11 +95,6 @@ type memberDataResponse struct {
 				Country string `json:"country"`
 			} `json:"shippingInfo"`
 			DataFields []DataItem `json:"dataFields"`
-			Space      struct {
-				User struct {
-					PublicKey string `json:"publicKey"`
-				} `json:"user"`
-			} `json:"space"`
 		} `json:"member"`
 	} `json:"data"`
 }
@@ -149,7 +144,7 @@ type DataItem struct {
 
 // The structure that should be filled out and passed to the CreateSubscription function.
 type SubscriptionRequest struct {
-	subscriptionFor string     `json:"subscription_for"`
+	SubscriptionFor string     `json:"subscription_for"`
 	Email           string     `json:"email"`            // Email customer provided
 	Name            string     `json:"name"`             // Name of customer
 	Password        string     `json:"password"`         // Customer Password
@@ -219,12 +214,12 @@ type MemberData struct {
 	ShippingCountry string     // Shipping country of customer (optional depending on plan).
 	ShippingOptions string     // Shipping options of customer (optional depending on plan).
 	DataFields      []DataItem // Data items (optional)
-	Plans           []string   // Array of plan ids
+	Plan            string     // Plan ID
 }
 
 func graphQL(query string, variables map[string]string, response interface{}) error {
 	var client = &http.Client{
-		Timeout: 1 * time.Second,
+		Timeout: 15 * time.Second,
 	}
 
 	var gql = gqlQuery{query, variables}
@@ -258,7 +253,7 @@ func graphQL(query string, variables map[string]string, response interface{}) er
 func sendRequest(kind string, path string, request interface{}) ([]byte, error) {
 	var url = fmt.Sprintf("%s%s", domain, path)
 	var client = &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout: 30 * time.Second,
 	}
 
 	body, err := json.Marshal(request)
@@ -283,7 +278,7 @@ func sendRequest(kind string, path string, request interface{}) ([]byte, error) 
 		return nil, err
 	}
 
-	if res.StatusCode < 200 || res.StatusCode > 300 {
+	if res.StatusCode < 200 || res.StatusCode > 299 {
 		var errorText = fmt.Sprintf(
 			"%s %d %s %s",
 			kind,
@@ -315,7 +310,7 @@ func Login(request LoginRequest) (*Member, error) {
 // Get member details
 func (member *Member) GetData() (*MemberData, error) {
 	var response memberDataResponse
-	var variables map[string]string
+	var variables = map[string]string{"token": member.Token}
 	var memberData MemberData
 
 	var err = graphQL(getMemberQuery, variables, &response)
@@ -325,20 +320,19 @@ func (member *Member) GetData() (*MemberData, error) {
 
 	memberData.CreditCardLast4 = response.Data.Member.CcLast4
 	memberData.CreditCardType = response.Data.Member.CcType
-	// memberData.DataFields
+	memberData.DataFields = response.Data.Member.DataFields
 	memberData.Email = response.Data.Member.Email
 	memberData.Id = response.Data.Member.Id
 	memberData.Name = response.Data.Member.Name
-	// memberData.Plans
+	memberData.Plan = response.Data.Member.Plan.Alias
 	memberData.ShippingAddress = response.Data.Member.ShippingInfo.Address
 	memberData.ShippingCity = response.Data.Member.ShippingInfo.City
 	memberData.ShippingCountry = response.Data.Member.ShippingInfo.Country
 	memberData.ShippingName = response.Data.Member.ShippingInfo.Name
-	//memberData.ShippingOptions = response.Data.Member.???
 	memberData.ShippingState = response.Data.Member.ShippingInfo.State
 	memberData.ShippingZip = response.Data.Member.ShippingInfo.Zip
 
-	return nil, nil
+	return &memberData, nil
 }
 
 // Update member settings
@@ -375,7 +369,7 @@ func CreatePayment(request PaymentRequest) error {
 
 // Creates a new subscription to a plan
 func CreateSubscription(request SubscriptionRequest) (*Member, error) {
-	request.subscriptionFor = "space"
+	request.SubscriptionFor = "space"
 	body, err := sendRequest("POST", "/api/subscriptions", request)
 	if err != nil {
 		return nil, err
@@ -404,12 +398,12 @@ func (member *Member) Delete() error {
 
 // Logs out the member.  The member object cannot be used after this call and must be recreated.
 func (member *Member) Logout() error {
-	var request = map[string]string{"token": member.Token}
+	var request = map[string]string{"token": member.Token, "public_key": member.PublicKey}
 
 	_, err := sendRequest("POST", "/api/service/logout", request)
 	if err != nil {
 		return err
 	}
 
-	return nil
+	return err
 }
